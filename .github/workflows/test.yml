@@ -22,4 +22,9 @@ jobs:
         run: deno lint
 
       - name: Test
-        run: deno test
+        run: deno test --coverage=coverage
+
+      - run: deno coverage ./coverage --lcov > coverage.lcov
+      - uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.lcov
