@@ -45,7 +45,7 @@ export function getCell(map: Map, position: Position): MapCell {
     return outCell;
   }
 
-  return map.cells[position.y][position.x] ?? outCell;
+  return map.cells[position.y][position.x];
 }
 
 export function getCellRange(

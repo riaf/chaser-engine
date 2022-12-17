@@ -38,8 +38,8 @@ export function nextState(state: State, props: Props): State {
         props.isFinish = true;
         props.waitFor = null;
       }
-    } catch (_e) {
-      // console.log(e);
+    } catch (e) {
+      console.error(e);
     }
   }
 
