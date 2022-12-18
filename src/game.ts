@@ -46,6 +46,10 @@ export class Game {
     return this.#state;
   }
 
+  get turn() {
+    return this.#turn;
+  }
+
   get stateHistory() {
     return this.#stateHistory;
   }
