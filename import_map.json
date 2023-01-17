@@ -1,6 +1,6 @@
 {
   "imports": {
     "eventmit": "https://cdn.skypack.dev/eventmit?dts",
-    "testing/": "https://deno.land/std@0.172.0/testing/"
+    "testing/": "https://deno.land/std@0.173.0/testing/"
   }
 }
