@@ -38,15 +38,16 @@ export function createAction(props: CreateProps): Action {
 }
 
 export function actionType(action: Action): ActionType {
-  if (action.command.startsWith("w")) {
-    return "walk";
-  } else if (action.command.startsWith("l")) {
-    return "look";
-  } else if (action.command.startsWith("s")) {
-    return "search";
-  } else if (action.command.startsWith("p")) {
-    return "put";
-  } else {
-    throw new Error(`unknown action type: ${action.command}`);
+  switch (action.command[0]) {
+    case "w":
+      return "walk";
+    case "l":
+      return "look";
+    case "s":
+      return "search";
+    case "p":
+      return "put";
+    default:
+      throw new Error(`unknown action type: ${action.command}`);
   }
 }

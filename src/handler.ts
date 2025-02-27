@@ -6,7 +6,8 @@ import { State } from "./state.ts";
 export function apply(state: State, action: Action): State {
   assert(state, action);
 
-  const nextState = selectProcessor(action)(state, action);
+  const processor = selectProcessor(action);
+  const nextState = processor(state, action);
 
   return { ...nextState, lastAction: structuredClone(action) };
 }

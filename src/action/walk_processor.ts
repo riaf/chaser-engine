@@ -11,6 +11,36 @@ import { nextPlayer, State } from "../state.ts";
 import { getTargetDifferential } from "./differential.ts";
 import { nextState } from "./post_processor.ts";
 
+function handleBlockCell(
+  state: State,
+  action: Action,
+  cells: MapCell[][],
+  pos: { y: number; x: number },
+  nextPosition: { y: number; x: number }
+): State {
+  cells[pos.y][pos.x] = createFloorCell();
+  cells[nextPosition.y][nextPosition.x] = createBlockCell();
+  return nextState(state, {
+    map: createMap({ ...state.map, cells }),
+    deadPlayers: new Set([...state.deadPlayers, action.actor]),
+    waitFor: nextPlayer(state, action),
+  });
+}
+
+function handleItemCell(
+  state: State,
+  action: Action,
+  cells: MapCell[][],
+  pos: { y: number; x: number },
+  nextPosition: { y: number; x: number },
+  score: Score
+): { cells: MapCell[][]; score: Score } {
+  cells[pos.y][pos.x] = createBlockCell();
+  cells[nextPosition.y][nextPosition.x] = createFloorCell();
+  score = addPlayerScore(score, action.actor, 1);
+  return { cells, score };
+}
+
 export function walkProcessor(state: State, action: Action): State {
   const pos = state.playerPositions[action.actor.id];
   const dydx = getTargetDifferential(action);
@@ -25,19 +55,13 @@ export function walkProcessor(state: State, action: Action): State {
   const nextCell: MapCell = cells[nextPosition.y][nextPosition.x];
 
   if (nextCell.type === CellTypes.Block) {
-    cells[pos.y][pos.x] = createFloorCell();
-    cells[nextPosition.y][nextPosition.x] = createBlockCell();
-    return nextState(state, {
-      map: createMap({ ...state.map, cells }),
-      deadPlayers: new Set([...state.deadPlayers, action.actor]),
-      waitFor: nextPlayer(state, action),
-    });
+    return handleBlockCell(state, action, cells, pos, nextPosition);
   }
 
   if (nextCell.type === CellTypes.Item) {
-    cells[pos.y][pos.x] = createBlockCell();
-    cells[nextPosition.y][nextPosition.x] = createFloorCell();
-    score = addPlayerScore(score, action.actor, 1);
+    const result = handleItemCell(state, action, cells, pos, nextPosition, score);
+    cells = result.cells;
+    score = result.score;
   }
 
   const playerPositions = structuredClone(state.playerPositions);

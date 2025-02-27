@@ -16,7 +16,7 @@ type Props = {
 
 export function nextState(state: State, props: Props): State {
   const map = props.map ?? state.map;
-  props.deadPlayers = new Set([
+  const deadPlayers = new Set([
     ...state.deadPlayers,
     ...(props.deadPlayers ?? []),
   ]);
@@ -32,9 +32,7 @@ export function nextState(state: State, props: Props): State {
           getCell(map, { x: position.x - 1, y: position.y }),
         ].every((cell) => cell.type === CellTypes.Block)
       ) {
-        props.deadPlayers = new Set([...props.deadPlayers, player]);
-
-        // 今は、死んだプレイヤーがいたらゲーム終了とする
+        deadPlayers.add(player);
         props.isFinish = true;
         props.waitFor = null;
       }
@@ -43,11 +41,10 @@ export function nextState(state: State, props: Props): State {
     }
   }
 
-  // 今は、死んだプレイヤーがいたらゲーム終了とする
-  if (state.deadPlayers.size > 0) {
+  if (deadPlayers.size > 0) {
     props.isFinish = true;
     props.waitFor = null;
   }
 
-  return createState({ ...state, ...props });
+  return createState({ ...state, ...props, deadPlayers });
 }
