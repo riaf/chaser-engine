@@ -1,26 +1,33 @@
-import { Action, Command, Commands } from "../action.ts";
+import { Action, Command } from "../action.ts";
+import { Direction, getDirectionDiff } from "../direction.ts";
 
-type TargetDifferential = { x: number; y: number };
-
-const targetDifferentials: Record<Command, TargetDifferential> = {
-  [Commands.WalkUp]: { x: 0, y: -1 },
-  [Commands.WalkDown]: { x: 0, y: 1 },
-  [Commands.WalkLeft]: { x: -1, y: 0 },
-  [Commands.WalkRight]: { x: 1, y: 0 },
-  [Commands.LookUp]: { x: 0, y: 0 },
-  [Commands.LookDown]: { x: 0, y: 0 },
-  [Commands.LookLeft]: { x: 0, y: 0 },
-  [Commands.LookRight]: { x: 0, y: 0 },
-  [Commands.SearchUp]: { x: 0, y: 0 },
-  [Commands.SearchDown]: { x: 0, y: 0 },
-  [Commands.SearchLeft]: { x: 0, y: 0 },
-  [Commands.SearchRight]: { x: 0, y: 0 },
-  [Commands.PutUp]: { x: 0, y: -1 },
-  [Commands.PutDown]: { x: 0, y: 1 },
-  [Commands.PutLeft]: { x: -1, y: 0 },
-  [Commands.PutRight]: { x: 1, y: 0 },
-} as const;
+export function getCommandDirection(command: Command): Direction | null {
+  const lastChar = command.charAt(1);
+  switch (lastChar) {
+    case "u":
+      return "up";
+    case "r":
+      return "right";
+    case "d":
+      return "down";
+    case "l":
+      return "left";
+    default:
+      return null;
+  }
+}
 
 export function getTargetDifferential(action: Action) {
-  return targetDifferentials[action.command];
+  const direction = getCommandDirection(action.command);
+  if (!direction) {
+    throw new Error(`Invalid command direction: ${action.command}`);
+  }
+
+  // For look/search commands, return no movement
+  if (action.command.startsWith("l") || action.command.startsWith("s")) {
+    return { x: 0, y: 0 };
+  }
+
+  // For walk/put commands, return the direction differential
+  return getDirectionDiff(direction);
 }

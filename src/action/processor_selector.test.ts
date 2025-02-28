@@ -2,8 +2,9 @@ import { assertEquals } from "testing/asserts.ts";
 import { Commands } from "../action.ts";
 import { createPlayer } from "../player.ts";
 import { selectProcessor } from "./processor_selector.ts";
+import { lookProcessor } from "./look_processor.ts";
 import { putProcessor } from "./put_processor.ts";
-import { skipProcessor } from "./skip_processor.ts";
+import { searchProcessor } from "./search_processor.ts";
 import { walkProcessor } from "./walk_processor.ts";
 
 Deno.test("Being able to choose the correct processor for all commands", () => {
@@ -39,13 +40,24 @@ Deno.test("Being able to choose the correct processor for all commands", () => {
     );
   }
 
-  // Skip Processor
+  // Look Processor
   for (
     const command of [
       Commands.LookDown,
       Commands.LookLeft,
       Commands.LookRight,
       Commands.LookUp,
+    ]
+  ) {
+    assertEquals(
+      selectProcessor({ command, actor }),
+      lookProcessor,
+    );
+  }
+
+  // Search Processor
+  for (
+    const command of [
       Commands.SearchDown,
       Commands.SearchLeft,
       Commands.SearchRight,
@@ -54,7 +66,7 @@ Deno.test("Being able to choose the correct processor for all commands", () => {
   ) {
     assertEquals(
       selectProcessor({ command, actor }),
-      skipProcessor,
+      searchProcessor,
     );
   }
 });

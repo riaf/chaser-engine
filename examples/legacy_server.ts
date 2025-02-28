@@ -1,168 +1,283 @@
 import { eventmit } from "eventmit";
 import { Command, createAction, Game, State } from "../mod.ts";
 
-class CoolError extends Error { }
-class HotError extends Error { }
+/**
+ * クールプレイヤー（1番目のプレイヤー）に関するエラー
+ */
+class CoolPlayerError extends Error {
+  constructor(message: string | Error) {
+    super(message instanceof Error ? message.message : message);
+    this.name = "CoolPlayerError";
+  }
+}
 
-type Props = {
-  coolPort?: number;
-  hotPort?: number;
-  game: Game;
+/**
+ * ホットプレイヤー（2番目のプレイヤー）に関するエラー
+ */
+class HotPlayerError extends Error {
+  constructor(message: string | Error) {
+    super(message instanceof Error ? message.message : message);
+    this.name = "HotPlayerError";
+  }
+}
+
+/**
+ * レガシーサーバー設定のプロパティ
+ */
+type LegacyServerProps = {
+  coolPort?: number; // クールプレイヤー用ポート
+  hotPort?: number; // ホットプレイヤー用ポート
+  game: Game; // ゲームインスタンス
 };
 
+/**
+ * ゲーム通信の状態
+ */
+enum GameState {
+  WAITING_FOR_READY = "waiting_for_ready",
+  SENDING_HINT = "sending_hint",
+  WAITING_FOR_COMMAND = "waiting_for_command",
+  SENDING_RESULT = "sending_result",
+  WAITING_FOR_TURN_END = "waiting_for_turn_end",
+  FINISHED = "finished",
+}
+
+/**
+ * 従来のCHaserプロトコルに対応したTCPサーバー
+ */
 export class LegacyServer {
+  /** 状態変更イベント */
   readonly stateEvent = eventmit<State>();
 
+  // プライベートプロパティ
   #game: Game;
   #coolPort: number;
   #hotPort: number;
   #connections: Deno.Conn[] = [];
+  #gameState: GameState = GameState.WAITING_FOR_READY;
 
-  constructor({ game, coolPort = 2009, hotPort = 2010 }: Props) {
-    this.#assertGame(game);
-
+  /**
+   * レガシーサーバーのインスタンスを作成
+   */
+  constructor({ game, coolPort = 2009, hotPort = 2010 }: LegacyServerProps) {
+    this.#validateGame(game);
     this.#game = game;
     this.#coolPort = coolPort;
     this.#hotPort = hotPort;
   }
 
-  async listen() {
-    const servers = [
-      Deno.listen({ port: this.#coolPort }),
-      Deno.listen({ port: this.#hotPort }),
-    ];
-
-    console.log(
-      `Listening on port ${this.#coolPort} (cool) and ${this.#hotPort} (hot)`,
-    );
-
-    this.#connections = await Promise.all(
-      servers.map((server) => server.accept()),
-    );
-
+  /**
+   * サーバーの待ち受けを開始し、ゲームを実行
+   */
+  async listen(): Promise<void> {
     try {
-      await this.#setName(this.#connections[0], this.#connections[1]);
+      // TCPサーバーをセットアップして接続を受け付ける
+      const servers = [
+        Deno.listen({ port: this.#coolPort }),
+        Deno.listen({ port: this.#hotPort }),
+      ];
 
-      game:
-      for await (const players of this.#game) {
-        for await (const [i, player] of players.entries()) {
-          try {
-            await this.#send(this.#connections[i], "@");
-            const ready = await this.#receive(this.#connections[i]);
-            if (ready !== "gr") {
-              this.#game.elminatePlayer(player);
-              this.stateEvent.emit(this.#game.currentState);
-              break game;
-            }
+      console.log(
+        `Listening on port ${this.#coolPort} (cool) and ${this.#hotPort} (hot)`,
+      );
 
-            await this.#send(
-              this.#connections[i],
-              [
-                "1",
-                ...this.#game.preActionHint(player).flat().map((cell) =>
-                  cell.legacyCode
-                ),
-              ].join(""),
-            );
+      // クライアント接続を待機
+      this.#connections = await Promise.all(
+        servers.map((server) => server.accept()),
+      );
 
-            const command = await this.#receive(this.#connections[i]);
-            if (!command.match(/^[wpls][udrl]$/)) {
-              this.#game.elminatePlayer(player);
-              this.stateEvent.emit(this.#game.currentState);
-              break game;
-            }
+      // プレイヤー名を設定
+      await this.#setupPlayerNames();
 
-            const action = createAction({
-              actor: player,
-              command: command as Command,
-            });
-
-            const postActionHint = this.#game.applyAction(action);
-
-            const aliveFlag = this.#game.currentState.deadPlayers.has(player)
-              ? "0"
-              : "1";
-
-            await this.#send(
-              this.#connections[i],
-              [aliveFlag, ...postActionHint.flat().map((cell) => cell.legacyCode)]
-                .join(""),
-            );
-
-            const turnEnd = await this.#receive(this.#connections[i]);
-            if (turnEnd !== "#") {
-              this.#game.elminatePlayer(player);
-              this.stateEvent.emit(this.#game.currentState);
-              break game;
-            }
-
-            this.stateEvent.emit(this.#game.currentState);
-          } catch (e) {
-            const error = i === 0 ? new CoolError(e) : new HotError(e);
-            throw error;
-          }
-        }
-      }
-    } catch (e) {
-      console.error(e);
-      this.end();
-
-      if (e instanceof CoolError) {
-        this.#game.elminatePlayer(this.#game.currentState.players[0]);
-      } else if (e instanceof HotError) {
-        this.#game.elminatePlayer(this.#game.currentState.players[1]);
-      } else {
-        throw e;
-      }
+      // ゲームのメインループ
+      await this.#runGameLoop();
+    } catch (error) {
+      console.error("Server error:", error);
+      await this.#handleGameError(error);
+    } finally {
+      await this.end();
     }
-
-    this.end();
   }
 
-  end() {
+  /**
+   * サーバー接続を終了
+   */
+  end(): Promise<void> {
+    // すべてのTCP接続を閉じる
     for (const conn of this.#connections) {
       try {
         conn.close();
-      } catch (e) {
-        console.error(e);
+      } catch (error) {
+        console.error("Connection close error:", error);
       }
     }
 
     this.#connections = [];
+    this.#gameState = GameState.FINISHED;
   }
 
-  #assertGame(game: Game) {
+  /**
+   * ゲームのメインループを実行
+   */
+  async #runGameLoop(): Promise<void> {
+    gameLoop: for await (const players of this.#game) {
+      // 各プレイヤーのターンを処理
+      for await (const [index, player] of players.entries()) {
+        try {
+          // ターンの開始を通知
+          await this.#send(this.#connections[index], "@");
+
+          // クライアントの準備確認
+          this.#gameState = GameState.WAITING_FOR_READY;
+          const ready = await this.#receive(this.#connections[index]);
+          if (ready !== "gr") {
+            console.warn(`Player ${player.name} not ready, response: ${ready}`);
+            this.#game.elminatePlayer(player);
+            this.stateEvent.emit(this.#game.currentState);
+            break gameLoop;
+          }
+
+          // ヒントデータを送信
+          this.#gameState = GameState.SENDING_HINT;
+          const preActionHint = this.#game.preActionHint(player);
+          const hintData = [
+            "1", // 生存フラグ
+            ...preActionHint.flat().map((cell) => cell.legacyCode),
+          ].join("");
+          await this.#send(this.#connections[index], hintData);
+
+          // コマンド受信
+          this.#gameState = GameState.WAITING_FOR_COMMAND;
+          const command = await this.#receive(this.#connections[index]);
+
+          // コマンド形式のバリデーション
+          if (!this.#isValidCommand(command)) {
+            console.warn(`Invalid command from ${player.name}: ${command}`);
+            this.#game.elminatePlayer(player);
+            this.stateEvent.emit(this.#game.currentState);
+            break gameLoop;
+          }
+
+          // アクションの実行
+          const action = createAction({
+            actor: player,
+            command: command as Command,
+          });
+          const postActionHint = this.#game.applyAction(action);
+
+          // アクション結果の送信
+          this.#gameState = GameState.SENDING_RESULT;
+          const aliveFlag = this.#game.currentState.deadPlayers.has(player)
+            ? "0"
+            : "1";
+          const resultData = [
+            aliveFlag,
+            ...postActionHint.flat().map((cell) => cell.legacyCode),
+          ].join("");
+          await this.#send(this.#connections[index], resultData);
+
+          // ターン終了確認
+          this.#gameState = GameState.WAITING_FOR_TURN_END;
+          const turnEnd = await this.#receive(this.#connections[index]);
+          if (turnEnd !== "#") {
+            console.warn(`Invalid turn end from ${player.name}: ${turnEnd}`);
+            this.#game.elminatePlayer(player);
+            this.stateEvent.emit(this.#game.currentState);
+            break gameLoop;
+          }
+
+          // 状態変更イベントを発行
+          this.stateEvent.emit(this.#game.currentState);
+        } catch (error) {
+          // プレイヤーごとのエラーハンドリング
+          const playerError = index === 0
+            ? new CoolPlayerError(error)
+            : new HotPlayerError(error);
+          throw playerError;
+        }
+      }
+    }
+  }
+
+  /**
+   * プレイヤー名を設定
+   */
+  async #setupPlayerNames(): Promise<void> {
+    try {
+      // クールプレイヤー名を受信
+      const coolPlayerName = await this.#receive(this.#connections[0]);
+      this.#game.currentState.players[0].name = coolPlayerName;
+      console.log(`Cool player connected: ${coolPlayerName}`);
+    } catch (error) {
+      throw new CoolPlayerError(error);
+    }
+
+    try {
+      // ホットプレイヤー名を受信
+      const hotPlayerName = await this.#receive(this.#connections[1]);
+      this.#game.currentState.players[1].name = hotPlayerName;
+      console.log(`Hot player connected: ${hotPlayerName}`);
+    } catch (error) {
+      throw new HotPlayerError(error);
+    }
+  }
+
+  /**
+   * ゲームエラーの処理
+   */
+  #handleGameError(error: unknown): Promise<void> {
+    if (error instanceof CoolPlayerError) {
+      console.error("Cool player error:", error.message);
+      this.#game.elminatePlayer(this.#game.currentState.players[0]);
+    } else if (error instanceof HotPlayerError) {
+      console.error("Hot player error:", error.message);
+      this.#game.elminatePlayer(this.#game.currentState.players[1]);
+    } else {
+      console.error("Unexpected error:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * ゲーム設定の検証
+   */
+  #validateGame(game: Game): void {
     if (game.currentState.players.length !== 2) {
-      throw new Error("Only support 2 players");
+      throw new Error("Legacy server only supports exactly 2 players");
     }
   }
 
-  async #send(conn: Deno.Conn, data: string, withnl = true) {
+  /**
+   * コマンドの形式を検証
+   */
+  #isValidCommand(command: string): boolean {
+    return /^[wpls][udrl]$/.test(command);
+  }
+
+  /**
+   * クライアントへデータを送信
+   */
+  async #send(
+    conn: Deno.Conn,
+    data: string,
+    withNewline = true,
+  ): Promise<void> {
     const encoder = new TextEncoder();
-    const nl = withnl ? "\n" : "";
-    await conn.write(encoder.encode(data + nl));
+    const newline = withNewline ? "\n" : "";
+    await conn.write(encoder.encode(data + newline));
   }
 
-  async #receive(conn: Deno.Conn) {
-    const buf = new Uint8Array(1024);
-    const n = await conn.read(buf);
-    if (n === null) {
-      throw new Error("Unexpected EOF");
-    }
-    return new TextDecoder().decode(buf.subarray(0, n)).trimEnd();
-  }
+  /**
+   * クライアントからデータを受信
+   */
+  async #receive(conn: Deno.Conn): Promise<string> {
+    const buffer = new Uint8Array(1024);
+    const bytesRead = await conn.read(buffer);
 
-  async #setName(coolConn: Deno.Conn, hotConn: Deno.Conn) {
-    try {
-      this.#game.currentState.players[0].name = await this.#receive(coolConn);
-    } catch (e) {
-      throw new CoolError(e);
+    if (bytesRead === null) {
+      throw new Error("Connection closed unexpectedly");
     }
 
-    try {
-      this.#game.currentState.players[1].name = await this.#receive(hotConn);
-    } catch (e) {
-      throw new HotError(e);
-    }
+    return new TextDecoder().decode(buffer.subarray(0, bytesRead)).trimEnd();
   }
 }

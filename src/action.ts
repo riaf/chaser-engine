@@ -1,5 +1,6 @@
 import { Player } from "./player.ts";
 
+// 列挙型として定義する代わりに、より厳密な型定義
 export const Commands = {
   WalkUp: "wu",
   WalkRight: "wr",
@@ -33,20 +34,33 @@ type CreateProps = {
   command: Command;
 };
 
-export function createAction(props: CreateProps): Action {
-  return { ...props } as const;
+/**
+ * アクションオブジェクトを作成し、不変オブジェクトとして返す
+ */
+export function createAction({ actor, command }: CreateProps): Action {
+  return Object.freeze({ actor, command });
 }
 
+/**
+ * アクションの種類を決定するマッピングテーブル
+ */
+const ACTION_TYPE_MAP: Record<string, ActionType> = {
+  w: "walk",
+  l: "look",
+  s: "search",
+  p: "put",
+};
+
+/**
+ * アクションの種類を決定する
+ */
 export function actionType(action: Action): ActionType {
-  if (action.command.startsWith("w")) {
-    return "walk";
-  } else if (action.command.startsWith("l")) {
-    return "look";
-  } else if (action.command.startsWith("s")) {
-    return "search";
-  } else if (action.command.startsWith("p")) {
-    return "put";
-  } else {
-    throw new Error(`unknown action type: ${action.command}`);
+  const prefix = action.command.charAt(0);
+  const type = ACTION_TYPE_MAP[prefix];
+
+  if (!type) {
+    throw new Error(`Unknown action type: ${action.command}`);
   }
+
+  return type;
 }

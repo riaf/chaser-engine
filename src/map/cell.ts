@@ -5,6 +5,8 @@ export const CellTypes = {
   Item: "item",
 } as const;
 
+export type CellType = typeof CellTypes[keyof typeof CellTypes];
+
 export const LegacyCellCodes = {
   Floor: "0",
   Player: "1",
@@ -12,9 +14,18 @@ export const LegacyCellCodes = {
   Item: "3",
 } as const;
 
+export type LegacyCellCode =
+  typeof LegacyCellCodes[keyof typeof LegacyCellCodes];
+
 export type FloorCell = {
   readonly legacyCode: "0";
   readonly type: typeof CellTypes.Floor;
+};
+
+export type PlayerCell = {
+  readonly legacyCode: "1";
+  readonly type: typeof CellTypes.Player;
+  readonly playerId: string;
 };
 
 export type BlockCell = {
@@ -27,12 +38,20 @@ export type ItemCell = {
   readonly type: typeof CellTypes.Item;
 };
 
-export type MapCell = FloorCell | BlockCell | ItemCell;
+export type MapCell = FloorCell | BlockCell | ItemCell | PlayerCell;
 
 export function createFloorCell(): FloorCell {
   return {
     legacyCode: LegacyCellCodes.Floor,
     type: CellTypes.Floor,
+  } as const;
+}
+
+export function createPlayerCell(playerId: string): PlayerCell {
+  return {
+    legacyCode: LegacyCellCodes.Player,
+    type: CellTypes.Player,
+    playerId,
   } as const;
 }
 
