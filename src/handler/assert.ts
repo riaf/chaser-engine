@@ -2,26 +2,47 @@ import { Action } from "../action.ts";
 import { Player } from "../player.ts";
 import { State } from "../state.ts";
 
-export function assert(state: State, action: Action) {
+/**
+ * アクションの実行前に状態の整合性を検証する
+ */
+export function assert(state: State, action: Action): void {
+  // 各検証を順番に実行し、エラーがあれば即座に中断
   assertStateActivity(state);
   assertValidActionPlayer(state, action);
-  assertPlayerAlived(state, action.actor);
+  assertPlayerAlive(state, action.actor);
 }
 
-function assertStateActivity(state: State) {
+/**
+ * ゲームが終了していないことを検証
+ */
+function assertStateActivity(state: State): void {
   if (state.isFinish) {
-    throw new Error(`state finished.`);
+    throw new Error(`Game is already finished and cannot accept more actions.`);
   }
 }
 
-function assertValidActionPlayer(state: State, action: Action) {
-  if (state.waitFor?.id !== action.actor.id) {
-    throw new Error(`Invalid action player`);
+/**
+ * アクションを実行しようとしているプレイヤーが適切かどうかを検証
+ */
+function assertValidActionPlayer(state: State, action: Action): void {
+  // waitForがnullでないことを確認
+  if (!state.waitFor) {
+    throw new Error(`No player is currently expected to act.`);
+  }
+
+  // 期待されているプレイヤーが行動しているか確認
+  if (state.waitFor.id !== action.actor.id) {
+    throw new Error(
+      `Expected player ${state.waitFor.id} to act, but received action from player ${action.actor.id}.`,
+    );
   }
 }
 
-function assertPlayerAlived(state: State, player: Player) {
+/**
+ * プレイヤーが生存していることを検証
+ */
+function assertPlayerAlive(state: State, player: Player): void {
   if (state.deadPlayers.has(player)) {
-    throw new Error(`Player dead`);
+    throw new Error(`Player ${player.id} is dead and cannot perform actions.`);
   }
 }

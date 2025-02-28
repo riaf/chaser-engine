@@ -1,12 +1,22 @@
-import { Action, Command, Commands } from "../action.ts";
+import { Action, actionType, Command, Commands } from "../action.ts";
 import { State } from "../state.ts";
+import { lookProcessor } from "./look_processor.ts";
 import { putProcessor } from "./put_processor.ts";
-import { skipProcessor } from "./skip_processor.ts";
+import { searchProcessor } from "./search_processor.ts";
 import { walkProcessor } from "./walk_processor.ts";
 
-type Processor = (state: State, action: Action) => State;
+export type Processor = (state: State, action: Action) => State;
 
-const processors: Record<Command, Processor> = {
+// Registry of processors by action type
+const processorsByType: Record<string, Processor> = {
+  "walk": walkProcessor,
+  "look": lookProcessor,
+  "search": searchProcessor,
+  "put": putProcessor,
+};
+
+// For backward compatibility
+const commandProcessors: Record<Command, Processor> = {
   [Commands.WalkUp]: walkProcessor,
   [Commands.WalkDown]: walkProcessor,
   [Commands.WalkLeft]: walkProcessor,
@@ -15,16 +25,25 @@ const processors: Record<Command, Processor> = {
   [Commands.PutDown]: putProcessor,
   [Commands.PutLeft]: putProcessor,
   [Commands.PutRight]: putProcessor,
-  [Commands.LookUp]: skipProcessor,
-  [Commands.LookDown]: skipProcessor,
-  [Commands.LookLeft]: skipProcessor,
-  [Commands.LookRight]: skipProcessor,
-  [Commands.SearchUp]: skipProcessor,
-  [Commands.SearchDown]: skipProcessor,
-  [Commands.SearchLeft]: skipProcessor,
-  [Commands.SearchRight]: skipProcessor,
+  [Commands.LookUp]: lookProcessor,
+  [Commands.LookDown]: lookProcessor,
+  [Commands.LookLeft]: lookProcessor,
+  [Commands.LookRight]: lookProcessor,
+  [Commands.SearchUp]: searchProcessor,
+  [Commands.SearchDown]: searchProcessor,
+  [Commands.SearchLeft]: searchProcessor,
+  [Commands.SearchRight]: searchProcessor,
 } as const;
 
 export function selectProcessor(action: Action): Processor {
-  return processors[action.command];
+  // Try to get processor from registry using action type
+  const type = actionType(action);
+  const processor = processorsByType[type];
+
+  if (processor) {
+    return processor;
+  }
+
+  // Fallback to direct command mapping
+  return commandProcessors[action.command];
 }
